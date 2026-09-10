@@ -124,3 +124,108 @@ def test_sqlite_integrity_check_is_ok_for_test_database(tmp_path: Path) -> None:
 
     with sqlite3.connect(database_path) as connection:
         assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+
+
+
+def test_restore_rolls_back_when_final_integrity_check_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from amshell import backup as backup_module
+
+    database_path = tmp_path / "amshell.db"
+    backup_dir = tmp_path / "backups"
+    database = make_database(
+        database_path,
+        tag="AST001",
+        serial="SERIAL001",
+        model="Original Model",
+    )
+    source_backup = create_backup(database_path, backup_dir)
+    database.update_asset("AST001", model="Changed Model", reason="Test change")
+
+    real_verify = backup_module.verify_database
+    live_checks = 0
+
+    def verify_with_one_final_failure(path: str | Path) -> bool:
+        nonlocal live_checks
+        candidate = Path(path)
+        if candidate == database_path:
+            live_checks += 1
+            if live_checks == 3:
+                return False
+        return real_verify(path)
+
+    monkeypatch.setattr(backup_module, "verify_database", verify_with_one_final_failure)
+
+    with pytest.raises(BackupError, match="Automatic rollback restored"):
+        restore_backup(database_path, source_backup, backup_dir)
+
+    restored = AssetDatabase(database_path)
+    assert restored.get_asset("AST001")["model"] == "Changed Model"
+    assert real_verify(database_path)
+
+
+def test_restore_reports_when_automatic_rollback_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from amshell import backup as backup_module
+
+    database_path = tmp_path / "amshell.db"
+    backup_dir = tmp_path / "backups"
+    database = make_database(
+        database_path,
+        tag="AST001",
+        serial="SERIAL001",
+        model="Original Model",
+    )
+    source_backup = create_backup(database_path, backup_dir)
+    database.update_asset("AST001", model="Changed Model", reason="Test change")
+
+    real_verify = backup_module.verify_database
+    live_checks = 0
+
+    def verify_with_final_and_rollback_failure(path: str | Path) -> bool:
+        nonlocal live_checks
+        candidate = Path(path)
+        if candidate == database_path:
+            live_checks += 1
+            if live_checks >= 3:
+                return False
+        return real_verify(path)
+
+    monkeypatch.setattr(backup_module, "verify_database", verify_with_final_and_rollback_failure)
+
+    with pytest.raises(BackupError, match="automatic rollback failed") as exc_info:
+        restore_backup(database_path, source_backup, backup_dir)
+
+    assert "Safety backup remains available at:" in str(exc_info.value)
+    assert any(path.name.startswith("pre-restore-") for path in backup_dir.glob("*.db"))
+
+
+def test_restore_removes_new_database_when_final_check_fails_without_prior_live_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from amshell import backup as backup_module
+
+    source_path = tmp_path / "source.db"
+    backup_dir = tmp_path / "backups"
+    make_database(source_path, tag="AST001", serial="SERIAL001", model="Recovered Model")
+    source_backup = create_backup(source_path, backup_dir)
+    target_path = tmp_path / "new" / "amshell.db"
+
+    real_verify = backup_module.verify_database
+
+    def verify_with_target_failure(path: str | Path) -> bool:
+        if Path(path) == target_path:
+            return False
+        return real_verify(path)
+
+    monkeypatch.setattr(backup_module, "verify_database", verify_with_target_failure)
+
+    with pytest.raises(BackupError, match="removed the newly created live database"):
+        restore_backup(target_path, source_backup, backup_dir)
+
+    assert not target_path.exists()

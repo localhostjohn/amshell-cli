@@ -84,6 +84,53 @@ def list_backups(backup_dir: str | Path = "backups") -> list[BackupInfo]:
     return backups
 
 
+def _replace_from_backup(source: Path, live_path: Path) -> None:
+    """Copy, verify and atomically replace the live database from a backup."""
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            prefix=".amshell-restore-",
+            suffix=".db",
+            dir=live_path.parent,
+            delete=False,
+        ) as temp_handle:
+            temp_path = Path(temp_handle.name)
+
+        shutil.copy2(source, temp_path)
+        if not verify_database(temp_path):
+            raise BackupError("Temporary restored copy failed SQLite integrity_check.")
+
+        os.replace(temp_path, live_path)
+        temp_path = None
+        Path(f"{live_path}-wal").unlink(missing_ok=True)
+        Path(f"{live_path}-shm").unlink(missing_ok=True)
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+
+
+def _rollback_restore(live_path: Path, safety_backup: Path | None) -> bool:
+    """Best-effort rollback after a post-replace integrity failure."""
+    if safety_backup is None:
+        try:
+            live_path.unlink(missing_ok=True)
+            Path(f"{live_path}-wal").unlink(missing_ok=True)
+            Path(f"{live_path}-shm").unlink(missing_ok=True)
+        except OSError:
+            return False
+        return not live_path.exists()
+
+    if not verify_database(safety_backup):
+        return False
+
+    try:
+        _replace_from_backup(safety_backup, live_path)
+    except (BackupError, OSError):
+        return False
+
+    return verify_database(live_path)
+
+
 def restore_backup(
     database_path: str | Path,
     backup_path: str | Path,
@@ -107,29 +154,28 @@ def restore_backup(
         safety_backup = create_backup(live_path, backup_dir, prefix="pre-restore")
 
     live_path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            prefix=".amshell-restore-",
-            suffix=".db",
-            dir=live_path.parent,
-            delete=False,
-        ) as temp_handle:
-            temp_path = Path(temp_handle.name)
-
-        shutil.copy2(source_backup, temp_path)
-        if not verify_database(temp_path):
-            raise BackupError("Temporary restored copy failed SQLite integrity_check.")
-
-        os.replace(temp_path, live_path)
-        temp_path = None
-        Path(f"{live_path}-wal").unlink(missing_ok=True)
-        Path(f"{live_path}-shm").unlink(missing_ok=True)
-    finally:
-        if temp_path is not None:
-            temp_path.unlink(missing_ok=True)
+    _replace_from_backup(source_backup, live_path)
 
     if not verify_database(live_path):
-        raise BackupError("Restored database failed final SQLite integrity_check.")
+        rollback_succeeded = _rollback_restore(live_path, safety_backup)
+        if rollback_succeeded and safety_backup is not None:
+            raise BackupError(
+                "Restored database failed final SQLite integrity_check. "
+                "Automatic rollback restored the previous live database."
+            )
+        if rollback_succeeded:
+            raise BackupError(
+                "Restored database failed final SQLite integrity_check. "
+                "Automatic rollback removed the newly created live database."
+            )
+        safety_detail = (
+            f" Safety backup remains available at: {safety_backup}"
+            if safety_backup is not None
+            else ""
+        )
+        raise BackupError(
+            "Restored database failed final SQLite integrity_check and automatic rollback failed."
+            f"{safety_detail}"
+        )
 
     return safety_backup

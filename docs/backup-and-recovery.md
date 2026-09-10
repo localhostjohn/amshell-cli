@@ -58,6 +58,7 @@ The restore workflow is intentionally conservative:
 6. Atomically replace the live database with the verified temporary copy.
 7. Remove stale SQLite WAL/SHM sidecar files if present.
 8. Verify the final restored live database.
+9. If the final integrity check fails, automatically attempt to restore the pre-restore safety backup. If no live database existed before the operation, remove the failed newly-created database instead.
 
 Use `--yes` only when an interactive confirmation is not appropriate:
 
@@ -76,6 +77,10 @@ AMShell refuses a restore when:
 - the final restored database fails validation.
 
 A corrupt selected backup is rejected before the live database is changed.
+
+If the final post-replace integrity check fails, AMShell performs a best-effort automatic rollback. When a previous live database existed, the verified `pre-restore-*` safety backup is copied through the same temporary-file verification and atomic replacement path. When the restore was creating a brand-new live database, rollback restores the previous "no database" state by removing the failed file.
+
+If automatic rollback succeeds, the raised error explicitly confirms that recovery occurred. If rollback fails, AMShell reports that failure and, when available, includes the path of the retained safety backup so the operator has a clear manual recovery source.
 
 ## Scope
 
