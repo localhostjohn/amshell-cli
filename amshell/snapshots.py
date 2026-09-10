@@ -75,10 +75,55 @@ def load_snapshot(path: str | Path) -> dict[str, object]:
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError(f"Unable to read snapshot: {snapshot_path}") from exc
 
+    if not isinstance(payload, dict):
+        raise ValueError(f"Snapshot root object is invalid: {snapshot_path}")
     if payload.get("schema") != SNAPSHOT_SCHEMA or payload.get("version") != SNAPSHOT_VERSION:
         raise ValueError(f"Unsupported AMShell snapshot format: {snapshot_path}")
-    if not isinstance(payload.get("assets"), list):
-        raise TypeError(f"Snapshot assets are invalid: {snapshot_path}")
+
+    created_at = payload.get("created_at")
+    if not isinstance(created_at, str) or not created_at.strip():
+        raise ValueError(f"Snapshot created_at is invalid: {snapshot_path}")
+    try:
+        created = datetime.fromisoformat(created_at)
+    except ValueError as exc:
+        raise ValueError(f"Snapshot created_at is invalid: {snapshot_path}") from exc
+    if created.tzinfo is None:
+        raise ValueError(f"Snapshot created_at must include a timezone: {snapshot_path}")
+
+    asset_count = payload.get("asset_count")
+    if isinstance(asset_count, bool) or not isinstance(asset_count, int) or asset_count < 0:
+        raise ValueError(f"Snapshot asset_count is invalid: {snapshot_path}")
+
+    assets = payload.get("assets")
+    if not isinstance(assets, list):
+        raise ValueError(f"Snapshot assets are invalid: {snapshot_path}")
+    if asset_count != len(assets):
+        raise ValueError(f"Snapshot asset_count does not match assets: {snapshot_path}")
+
+    seen_tags: set[str] = set()
+    for index, asset in enumerate(assets):
+        if not isinstance(asset, dict):
+            raise ValueError(f"Snapshot asset {index} is invalid: {snapshot_path}")
+
+        missing = [field for field in ASSET_EXPORT_FIELDS if field not in asset]
+        if missing:
+            raise ValueError(
+                f"Snapshot asset {index} is missing required field(s): {', '.join(missing)}"
+            )
+
+        for field in ASSET_EXPORT_FIELDS:
+            if not isinstance(asset[field], str):
+                raise ValueError(
+                    f"Snapshot asset {index} field '{field}' must be a string: {snapshot_path}"
+                )
+
+        asset_tag = asset["asset_tag"].strip()
+        if not asset_tag:
+            raise ValueError(f"Snapshot asset {index} has an empty asset_tag: {snapshot_path}")
+        if asset_tag in seen_tags:
+            raise ValueError(f"Snapshot contains duplicate asset_tag '{asset_tag}': {snapshot_path}")
+        seen_tags.add(asset_tag)
+
     return payload
 
 
@@ -91,7 +136,7 @@ def list_snapshots(snapshot_dir: str | Path = "snapshots") -> list[SnapshotInfo]
     for path in sorted(directory.glob("snapshot-*.json"), reverse=True):
         try:
             payload = load_snapshot(path)
-        except (TypeError, ValueError):
+        except ValueError:
             continue
         results.append(
             SnapshotInfo(
