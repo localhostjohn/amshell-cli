@@ -1,0 +1,4 @@
+asset_tag,hostname,device_type,manufacturer,model,serial_number,status,location,assigned_to,notes
+AST001,ASTRA-PC01,Laptop,ExampleCorp,LabBook 14,LAB-SERIAL-001,assigned,Home Lab,Lab User,Primary test workstation
+AST002,ASTRA-PC02,Desktop,ExampleCorp,LabDesk Mini,LAB-SERIAL-002,in-stock,Home Lab,,Spare device
+AST003,,Monitor,Example Displays,ViewPanel 24,LAB-SERIAL-003,repair,Workbench,,Fictional damaged display for lifecycle testing
