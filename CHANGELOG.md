@@ -11,6 +11,8 @@ The project follows semantic versioning for release tags and uses PEP 440-compat
 - Hardened `amshell doctor` to verify the newest backup's SQLite integrity before reporting backup freshness.
 - Extended schema health checks to validate the `asset_history` table as well as `assets`.
 - Added an inventory health check that warns when a valid database contains no assets.
+- Hardened snapshot loading with strict metadata, field, count, timestamp and duplicate-tag validation.
+- Malformed snapshot files now fail with controlled validation errors and are safely skipped by snapshot discovery.
 
 ## [2.0.0rc1] - 2026-09-10
 

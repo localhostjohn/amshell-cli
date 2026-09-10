@@ -16,7 +16,7 @@ Snapshots are written beneath `snapshots/` using a UTC timestamped filename. The
 amshell snapshot list
 ```
 
-The list shows the snapshot path, creation time, and asset count.
+The list shows the snapshot path, creation time, and asset count. Files that fail snapshot validation are ignored by listing/status/retention discovery rather than causing a later metadata exception.
 
 ## Compare snapshots
 
@@ -42,3 +42,16 @@ Examples of future deployment patterns include Windows Task Scheduler or cron/sy
 ## Data handling
 
 Snapshots can contain serial numbers, hostnames, assignments, locations, warranty information, and notes. Treat populated snapshots as operational inventory data. Do not commit real organisational snapshots to a public repository.
+
+## Snapshot validation
+
+When loading a snapshot, AMShell validates the payload before it is used for diffing, status or retention logic. A valid snapshot must have:
+
+- the supported AMShell snapshot schema and version;
+- a timezone-aware ISO 8601 `created_at` value;
+- a non-negative integer `asset_count` matching the number of asset records;
+- an `assets` list containing mapping objects;
+- every required exported asset field as a string;
+- a non-empty, unique `asset_tag` for each record.
+
+Malformed snapshots are rejected with controlled validation errors: `TypeError` for invalid JSON value types and `ValueError` for invalid metadata or values. Snapshot discovery catches both so corrupt or manually edited JSON cannot surface as unexpected key or datetime failures deeper in snapshot operations.
