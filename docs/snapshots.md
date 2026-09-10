@@ -54,4 +54,4 @@ When loading a snapshot, AMShell validates the payload before it is used for dif
 - every required exported asset field as a string;
 - a non-empty, unique `asset_tag` for each record.
 
-Malformed snapshots are rejected with a controlled `ValueError`. This prevents corrupt or manually edited JSON from surfacing as unexpected `KeyError`, `TypeError` or datetime parsing failures deeper in snapshot operations.
+Malformed snapshots are rejected with controlled validation errors: `TypeError` for invalid JSON value types and `ValueError` for invalid metadata or values. Snapshot discovery catches both so corrupt or manually edited JSON cannot surface as unexpected key or datetime failures deeper in snapshot operations.
