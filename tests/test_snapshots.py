@@ -144,7 +144,8 @@ def test_load_snapshot_rejects_invalid_metadata(
     path = tmp_path / "invalid-metadata.json"
     _write_snapshot(path, payload)
 
-    with pytest.raises(ValueError, match=message):
+    exception_type = TypeError if "root object" in message else ValueError
+    with pytest.raises(exception_type, match=message):
         load_snapshot(path)
 
 
@@ -170,7 +171,7 @@ def test_load_snapshot_rejects_non_string_asset_field(tmp_path: Path) -> None:
     path = tmp_path / "invalid-field-type.json"
     _write_snapshot(path, payload)
 
-    with pytest.raises(ValueError, match="must be a string"):
+    with pytest.raises(TypeError, match="must be a string"):
         load_snapshot(path)
 
 
