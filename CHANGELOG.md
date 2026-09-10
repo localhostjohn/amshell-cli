@@ -4,6 +4,14 @@ All notable AMShell changes are recorded here.
 
 The project follows semantic versioning for release tags and uses PEP 440-compatible Python package versions.
 
+## Unreleased
+
+### Changed
+
+- Hardened `amshell doctor` to verify the newest backup's SQLite integrity before reporting backup freshness.
+- Extended schema health checks to validate the `asset_history` table as well as `assets`.
+- Added an inventory health check that warns when a valid database contains no assets.
+
 ## [2.0.0rc1] - 2026-09-10
 
 ### Added
@@ -32,10 +40,10 @@ The project follows semantic versioning for release tags and uses PEP 440-compat
 
 ### Security
 
-- Current examples use fictional Astra lab data.
+- Public examples use fictional Astra lab data.
 - Operational databases, exports, backups and snapshots are excluded from source control.
-- Public-release readiness now explicitly requires Git-history verification for previously committed sensitive values, including the known legacy serial-number concern.
+- The public repository was created with clean Git history rather than inheriting the private prototype history.
 
 ## Pre-v2 prototype
 
-Earlier commits represent the original AMShell learning prototype. They are retained while the repository remains private. Before any future change to public visibility, repository history must be reviewed and, if necessary, rewritten according to `docs/release-readiness.md`.
+The original AMShell prototype remains only in the separate private development archive. The public `amshell-cli` repository starts from the sanitised v2 release-candidate tree and does not inherit the prototype's Git history.
