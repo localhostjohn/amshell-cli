@@ -1,4 +1,7 @@
+import json
 from pathlib import Path
+
+import pytest
 
 from amshell.models import Asset
 from amshell.snapshots import create_snapshot, diff_snapshots, list_snapshots, load_snapshot
@@ -32,6 +35,21 @@ def _asset(tag: str, hostname: str, status: str = "in-stock") -> dict[str, objec
         "notes": asset.notes,
         "created_at": asset.created_at,
         "updated_at": asset.updated_at,
+    }
+
+
+def _write_snapshot(path: Path, payload: object) -> None:
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _valid_payload() -> dict[str, object]:
+    assets = [_asset("AST001", "ASTRA-PC01")]
+    return {
+        "schema": "amshell.inventory-snapshot",
+        "version": 1,
+        "created_at": "2026-09-10T18:00:00+00:00",
+        "asset_count": len(assets),
+        "assets": assets,
     }
 
 
@@ -85,11 +103,105 @@ def test_diff_identical_snapshots_has_no_changes(tmp_path: Path) -> None:
 
 def test_load_snapshot_rejects_invalid_format(tmp_path: Path) -> None:
     path = tmp_path / "bad.json"
-    path.write_text('{"schema":"other","version":1,"assets":[]}', encoding="utf-8")
+    _write_snapshot(path, {"schema": "other", "version": 1, "assets": []})
 
-    try:
+    with pytest.raises(ValueError, match="Unsupported AMShell snapshot format"):
         load_snapshot(path)
-    except ValueError as exc:
-        assert "Unsupported AMShell snapshot format" in str(exc)
-    else:
-        raise AssertionError("Expected invalid snapshot to be rejected")
+
+
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        ([], "root object"),
+        (
+            {
+                **_valid_payload(),
+                "created_at": "not-a-date",
+            },
+            "created_at",
+        ),
+        (
+            {
+                **_valid_payload(),
+                "created_at": "2026-09-10T18:00:00",
+            },
+            "timezone",
+        ),
+        (
+            {
+                **_valid_payload(),
+                "asset_count": 2,
+            },
+            "does not match",
+        ),
+    ],
+)
+def test_load_snapshot_rejects_invalid_metadata(
+    tmp_path: Path,
+    payload: object,
+    message: str,
+) -> None:
+    path = tmp_path / "invalid-metadata.json"
+    _write_snapshot(path, payload)
+
+    with pytest.raises(ValueError, match=message):
+        load_snapshot(path)
+
+
+def test_load_snapshot_rejects_missing_asset_field(tmp_path: Path) -> None:
+    payload = _valid_payload()
+    assets = payload["assets"]
+    assert isinstance(assets, list)
+    del assets[0]["serial_number"]
+
+    path = tmp_path / "missing-field.json"
+    _write_snapshot(path, payload)
+
+    with pytest.raises(ValueError, match="missing required field"):
+        load_snapshot(path)
+
+
+def test_load_snapshot_rejects_non_string_asset_field(tmp_path: Path) -> None:
+    payload = _valid_payload()
+    assets = payload["assets"]
+    assert isinstance(assets, list)
+    assets[0]["hostname"] = 123
+
+    path = tmp_path / "invalid-field-type.json"
+    _write_snapshot(path, payload)
+
+    with pytest.raises(ValueError, match="must be a string"):
+        load_snapshot(path)
+
+
+def test_load_snapshot_rejects_duplicate_asset_tags(tmp_path: Path) -> None:
+    payload = _valid_payload()
+    assets = payload["assets"]
+    assert isinstance(assets, list)
+    assets.append(dict(assets[0]))
+    payload["asset_count"] = 2
+
+    path = tmp_path / "duplicate-tag.json"
+    _write_snapshot(path, payload)
+
+    with pytest.raises(ValueError, match="duplicate asset_tag"):
+        load_snapshot(path)
+
+
+def test_list_snapshots_skips_malformed_snapshot(tmp_path: Path) -> None:
+    valid = create_snapshot([_asset("AST001", "ASTRA-PC01")], tmp_path)
+    malformed = tmp_path / "snapshot-99999999T999999999999Z.json"
+    _write_snapshot(
+        malformed,
+        {
+            "schema": "amshell.inventory-snapshot",
+            "version": 1,
+            "created_at": "not-a-date",
+            "asset_count": 0,
+            "assets": [],
+        },
+    )
+
+    snapshots = list_snapshots(tmp_path)
+
+    assert [item.path for item in snapshots] == [valid]
