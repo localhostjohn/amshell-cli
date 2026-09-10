@@ -152,7 +152,7 @@ def test_restore_rolls_back_when_final_integrity_check_fails(
         candidate = Path(path)
         if candidate == database_path:
             live_checks += 1
-            if live_checks == 2:
+            if live_checks == 3:
                 return False
         return real_verify(path)
 
@@ -191,7 +191,7 @@ def test_restore_reports_when_automatic_rollback_fails(
         candidate = Path(path)
         if candidate == database_path:
             live_checks += 1
-            if live_checks >= 2:
+            if live_checks >= 3:
                 return False
         return real_verify(path)
 
