@@ -76,7 +76,7 @@ def load_snapshot(path: str | Path) -> dict[str, object]:
         raise ValueError(f"Unable to read snapshot: {snapshot_path}") from exc
 
     if not isinstance(payload, dict):
-        raise ValueError(f"Snapshot root object is invalid: {snapshot_path}")
+        raise TypeError(f"Snapshot root object is invalid: {snapshot_path}")
     if payload.get("schema") != SNAPSHOT_SCHEMA or payload.get("version") != SNAPSHOT_VERSION:
         raise ValueError(f"Unsupported AMShell snapshot format: {snapshot_path}")
 
@@ -96,14 +96,14 @@ def load_snapshot(path: str | Path) -> dict[str, object]:
 
     assets = payload.get("assets")
     if not isinstance(assets, list):
-        raise ValueError(f"Snapshot assets are invalid: {snapshot_path}")
+        raise TypeError(f"Snapshot assets are invalid: {snapshot_path}")
     if asset_count != len(assets):
         raise ValueError(f"Snapshot asset_count does not match assets: {snapshot_path}")
 
     seen_tags: set[str] = set()
     for index, asset in enumerate(assets):
         if not isinstance(asset, dict):
-            raise ValueError(f"Snapshot asset {index} is invalid: {snapshot_path}")
+            raise TypeError(f"Snapshot asset {index} is invalid: {snapshot_path}")
 
         missing = [field for field in ASSET_EXPORT_FIELDS if field not in asset]
         if missing:
@@ -113,7 +113,7 @@ def load_snapshot(path: str | Path) -> dict[str, object]:
 
         for field in ASSET_EXPORT_FIELDS:
             if not isinstance(asset[field], str):
-                raise ValueError(
+                raise TypeError(
                     f"Snapshot asset {index} field '{field}' must be a string: {snapshot_path}"
                 )
 
@@ -136,7 +136,7 @@ def list_snapshots(snapshot_dir: str | Path = "snapshots") -> list[SnapshotInfo]
     for path in sorted(directory.glob("snapshot-*.json"), reverse=True):
         try:
             payload = load_snapshot(path)
-        except ValueError:
+        except (TypeError, ValueError):
             continue
         results.append(
             SnapshotInfo(
